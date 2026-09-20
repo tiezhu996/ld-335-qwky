@@ -3,6 +3,8 @@ package handler
 import (
 	"log/slog"
 
+	"github.com/blueship581/gbinsureapi/internal/constants"
+	"github.com/blueship581/gbinsureapi/internal/dto"
 	"github.com/blueship581/gbinsureapi/internal/service"
 	"github.com/blueship581/gbinsureapi/internal/util"
 	"github.com/gin-gonic/gin"
@@ -21,7 +23,7 @@ func NewDailyReconciliationHandler(svc *service.ReconciliationService, log *slog
 
 // Daily 日终对账。
 // @Summary 日终对账
-// @Description 返回当日总笔数、总金额、成功/失败笔数
+// @Description 返回当日总笔数、总金额、成功/失败笔数；冲正单已从总笔数/总金额/成功笔数剔除并单列
 // @Tags reconciliations
 // @Security ApiKeyAuth
 // @Security BearerAuth
@@ -32,10 +34,22 @@ func (h *DailyReconciliationHandler) Daily(c *gin.Context) {
 	clientID := parseUint(c.Query("client_id"))
 	rec, err := h.svc.Daily(c.Request.Context(), clientID)
 	if err != nil {
+		h.log.WarnContext(c.Request.Context(), constants.LOG_RECONCILIATION_FAILED,
+			"client_id", clientID, "error", err)
 		c.Error(err)
 		return
 	}
-	util.OK(c, rec)
+	util.OK(c, dto.DailyReconciliationResponse{
+		ReconcileDate:  rec.ReconcileDate,
+		TotalCount:     rec.TotalCount,
+		TotalAmount:    util.FormatMoney(rec.TotalAmount),
+		SuccessCount:   rec.SuccessCount,
+		FailCount:      rec.FailCount,
+		AbnormalOrders: rec.AbnormalOrders,
+		ReversedCount:  rec.ReversedCount,
+		ReversedAmount: util.FormatMoney(rec.ReversedAmount),
+		Caliber:        constants.MsgReconciliationCaliber,
+	})
 }
 
 // List 对账记录列表。

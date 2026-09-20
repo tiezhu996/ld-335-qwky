@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS daily_reconciliations (
     success_count BIGINT DEFAULT 0,
     fail_count BIGINT DEFAULT 0,
     abnormal_orders BIGINT DEFAULT 0,
+    reversed_count BIGINT DEFAULT 0,
+    reversed_amount DOUBLE PRECISION DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

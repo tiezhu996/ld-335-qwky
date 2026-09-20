@@ -123,6 +123,14 @@ ld-335/
 
 > 所有请求响应头均携带 `X-Request-ID`，日志按请求 ID 串联；业务接口统一返回 `{code, message, data}`。
 
+## 冲正闭环与日终对账口径
+
+- **当日冲正**：`POST /api/v1/settlements/{settlement_no}/reverse` 仅处理当天（Asia/Shanghai 日历日）已结算（`settled`）的单；跨日单返回 `1403`，非已结算状态返回 `1405`。
+- **幂等**：同一结算单重复冲正返回首次冲正结果（HTTP 200，`duplicated=true`，`reversed_at` 为首次冲正时间），不重复迁移状态。
+- **并发安全**：状态迁移使用原子条件更新（`WHERE status='settled'`），并发到达也只完成一次 `settled → reversed` 迁移；查询与迁移在同一事务内，失败整体回滚，不留半更新。
+- **对账剔除**：`GET /api/v1/reconciliations/daily` 的总笔数、总金额、成功笔数均已剔除当日冲正单，冲正单单独计入 `reversed_count` / `reversed_amount`；取数与结算仓储共用同一口径（`SettledBetween`），汇总与 upsert 同事务。
+- **历史保留**：`GET /api/v1/settlements` 历史结算查询仍保留已冲正单，可按 `status=reversed` 过滤。
+
 ## API 调用示例（curl）
 
 ```bash

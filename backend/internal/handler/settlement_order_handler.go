@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 
+	"github.com/blueship581/gbinsureapi/internal/constants"
 	"github.com/blueship581/gbinsureapi/internal/dto"
 	"github.com/blueship581/gbinsureapi/internal/middleware"
 	"github.com/blueship581/gbinsureapi/internal/service"
@@ -49,7 +50,7 @@ func (h *SettlementOrderHandler) Submit(c *gin.Context) {
 
 // Reverse 结算冲正。
 // @Summary 结算冲正
-// @Description 结算当日全额回退
+// @Description 结算当日全额回退；重复请求返回首次冲正结果（duplicated=true），并发到达也只迁移一次状态
 // @Tags settlements
 // @Security ApiKeyAuth
 // @Security BearerAuth
@@ -57,12 +58,32 @@ func (h *SettlementOrderHandler) Submit(c *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/v1/settlements/{settlement_no}/reverse [post]
 func (h *SettlementOrderHandler) Reverse(c *gin.Context) {
-	order, err := h.svc.ReverseSettlement(c.Request.Context(), c.Param("settlement_no"))
+	settlementNo := c.Param("settlement_no")
+	order, duplicated, err := h.svc.ReverseSettlement(c.Request.Context(), settlementNo)
 	if err != nil {
+		h.log.WarnContext(c.Request.Context(), constants.LOG_SETTLEMENT_REVERSE_REJECTED,
+			"settlement_no", settlementNo, "error", err)
 		c.Error(err)
 		return
 	}
-	util.OK(c, order)
+	reversedAt := ""
+	if order.ReversedAt != nil {
+		reversedAt = util.FormatTime(*order.ReversedAt)
+	}
+	message := constants.MsgSettlementReversed
+	if duplicated {
+		// 重复请求：原样返回首次冲正结果，提示调用方本单此前已冲正。
+		message = constants.MsgReverseDuplicated
+	}
+	util.OK(c, dto.ReverseSettlementResponse{
+		SettlementNo: order.SettlementNo,
+		Status:       order.Status,
+		StatusText:   util.SettlementStatusText(order.Status),
+		TotalAmount:  util.FormatMoney(order.TotalAmount),
+		ReversedAt:   reversedAt,
+		Duplicated:   duplicated,
+		Message:      message,
+	})
 }
 
 // List 历史结算查询。

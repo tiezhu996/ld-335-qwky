@@ -112,28 +112,65 @@ func (s *SettlementService) SubmitSettlement(ctx context.Context, clientID, pres
 }
 
 // ReverseSettlement 当日冲正（全额回退）。
-func (s *SettlementService) ReverseSettlement(ctx context.Context, settlementNo string) (*model.SettlementOrder, error) {
-	order, err := s.orderRepo.FindByNo(settlementNo)
-	if err != nil {
-		if errors.Is(err, util.ErrNotFound) {
-			return nil, util.NotFoundError(constants.MsgSettlementNotFound, err)
+// 闭环语义：
+//  1. 仅允许冲正当天（Asia/Shanghai 日历日）已结算的单；
+//  2. 幂等：重复请求不报错，原样返回首次冲正结果（保留首次 reversed_at），duplicated=true；
+//  3. 并发安全：状态迁移走原子条件更新（WHERE status='settled'），并发到达也只迁移一次；
+//  4. 事务边界：查询与状态迁移同事务，任何失败整体回滚，不留半更新。
+func (s *SettlementService) ReverseSettlement(ctx context.Context, settlementNo string) (order *model.SettlementOrder, duplicated bool, err error) {
+	err = s.orderRepo.Transaction(func(txRepo *repository.SettlementOrderRepository) error {
+		current, err := txRepo.FindByNo(settlementNo)
+		if err != nil {
+			if errors.Is(err, util.ErrNotFound) {
+				return util.NotFoundError(constants.MsgSettlementNotFound, err)
+			}
+			return err
 		}
-		return nil, err
+		// 幂等短路：已冲正直接返回首次冲正结果（含首次 reversed_at），不再迁移状态。
+		if current.Status == constants.SettlementReversed {
+			order = current
+			duplicated = true
+			return nil
+		}
+		// 仅已结算单可冲正（presettled/failed/pending_manual 一律拒绝）。
+		if current.Status != constants.SettlementSettled {
+			return util.NewAppError(constants.CodeReverseNotSettled, 409, constants.MsgReverseNotSettled,
+				fmt.Errorf("SettlementOrder[no=%s] reverse failed: status=%s not settled", settlementNo, current.Status))
+		}
+		// 仅当日（Asia/Shanghai 日历日）已结算单可冲正。
+		if current.SettledAt == nil || !util.IsSameDay(*current.SettledAt) {
+			return util.NewAppError(constants.CodeReverseNotToday, 409, constants.MsgReverseNotToday,
+				fmt.Errorf("SettlementOrder[no=%s] reverse failed: settled_at=%v not today %s", settlementNo, current.SettledAt, util.TodayDate()))
+		}
+		now := time.Now()
+		affected, err := txRepo.MarkReversed(settlementNo, now)
+		if err != nil {
+			return util.LogError(s.log, constants.LOG_SETTLEMENT_REVERSE_FAILED, fmt.Errorf("mark reversed: %w", err))
+		}
+		if affected == 0 {
+			// 并发竞争：另一请求已抢先完成唯一一次状态迁移，回读并返回首次冲正结果。
+			fresh, err := txRepo.FindByNo(settlementNo)
+			if err != nil {
+				return util.LogError(s.log, constants.LOG_SETTLEMENT_REVERSE_FAILED, fmt.Errorf("reload after race: %w", err))
+			}
+			order = fresh
+			duplicated = true
+			return nil
+		}
+		current.Status = constants.SettlementReversed
+		current.ReversedAt = &now
+		order = current
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
 	}
-	if order.Status == constants.SettlementReversed {
-		return nil, util.ConflictError(constants.MsgReverseAlready, errors.New("already reversed"))
-	}
-	if order.SettledAt == nil || time.Since(*order.SettledAt) > 24*time.Hour {
-		return nil, util.NewAppError(constants.CodeReverseNotToday, 409, constants.MsgReverseNotToday, errors.New("not same day"))
-	}
-	now := time.Now()
-	order.Status = constants.SettlementReversed
-	order.ReversedAt = &now
-	if err := s.orderRepo.Update(order); err != nil {
-		return nil, util.LogError(s.log, constants.LOG_SETTLEMENT_REVERSE_FAILED, fmt.Errorf("update settlement order: %w", err))
+	if duplicated {
+		s.log.InfoContext(ctx, constants.LOG_SETTLEMENT_REVERSE_DUPLICATED, "settlement_no", settlementNo, "reversed_at", order.ReversedAt)
+		return order, true, nil
 	}
 	s.log.InfoContext(ctx, constants.LOG_SETTLEMENT_REVERSED, "settlement_no", settlementNo)
-	return order, nil
+	return order, false, nil
 }
 
 // ListOrders 分页查询结算单。

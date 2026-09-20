@@ -107,7 +107,10 @@ func migrateAndSeed(db *gorm.DB, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	if tableCount > 0 {
-		// init.sql 已建表：修复种子调用方的 API Key 哈希（与当前 API_KEY_SECRET 一致）
+		// init.sql 已建表：补齐冲正闭环新增列，再修复种子调用方的 API Key 哈希（与当前 API_KEY_SECRET 一致）
+		if err := ensureReversalSchema(db); err != nil {
+			return err
+		}
 		return syncDemoClientHashes(db, cfg)
 	}
 	if err := db.AutoMigrate(
@@ -136,6 +139,20 @@ func migrateAndSeed(db *gorm.DB, cfg config.Config, log *slog.Logger) error {
 	}
 	log.Info(constants.LOG_DB_INITIALIZED, "seed", "ok")
 	return syncDemoClientHashes(db, cfg)
+}
+
+// ensureReversalSchema 为历史库补齐冲正闭环新增列（日终对账冲正剔除栏），幂等可重复执行。
+func ensureReversalSchema(db *gorm.DB) error {
+	stmts := []string{
+		"ALTER TABLE daily_reconciliations ADD COLUMN IF NOT EXISTS reversed_count BIGINT DEFAULT 0",
+		"ALTER TABLE daily_reconciliations ADD COLUMN IF NOT EXISTS reversed_amount DOUBLE PRECISION DEFAULT 0",
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("ensure reversal schema: %w", err)
+		}
+	}
+	return nil
 }
 
 // syncDemoClientHashes 确保演示调用方使用当前 API_KEY_SECRET 生成的哈希（init.sql 占位哈希不匹配）。
