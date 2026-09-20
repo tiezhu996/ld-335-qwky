@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS settlement_orders (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_order_client ON settlement_orders(client_id, status);
+-- 日终对账口径：按状态剔除冲正单 + settled_at 当日区间扫描
+CREATE INDEX IF NOT EXISTS idx_order_settled ON settlement_orders(status, settled_at);
 
 CREATE TABLE IF NOT EXISTS daily_reconciliations (
     id BIGSERIAL PRIMARY KEY,

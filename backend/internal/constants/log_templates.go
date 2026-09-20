@@ -24,6 +24,8 @@ const (
 	LOG_SETTLEMENT_FAILED          = "SettlementOrder submit failed"
 	LOG_SETTLEMENT_REVERSED        = "SettlementOrder reversed"
 	LOG_SETTLEMENT_REVERSE_FAILED  = "SettlementOrder reverse failed"
+	LOG_SETTLEMENT_REVERSE_REPLAY  = "SettlementOrder reverse replayed, first result returned"
+	LOG_SETTLEMENT_REVERSE_RACE    = "SettlementOrder reverse race lost, re-read for classify"
 	LOG_RECONCILIATION_GENERATED   = "DailyReconciliation generated"
 	LOG_RECONCILIATION_FAILED      = "DailyReconciliation generation failed"
 	LOG_AUDIT_WRITTEN              = "AuditLog written"

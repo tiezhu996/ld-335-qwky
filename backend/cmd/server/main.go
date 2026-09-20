@@ -66,8 +66,8 @@ func main() {
 	clientSvc := service.NewApiClientService(clientRepo, cfg.APIKeySecret, cfg.JWTSecret, cfg.JWTExpireHours, log)
 	insuranceSvc := service.NewInsuranceService(insuredRepo, log)
 	feeSvc := service.NewFeeService(batchRepo, feeRepo, insuranceSvc, log)
-	settlementSvc := service.NewSettlementService(presetRepo, orderRepo, feeRepo, batchRepo, insuranceSvc, calculator, log)
 	reconSvc := service.NewReconciliationService(orderRepo, recRepo, log)
+	settlementSvc := service.NewSettlementService(presetRepo, orderRepo, feeRepo, batchRepo, insuranceSvc, reconSvc, calculator, log)
 
 	h := router.Handlers{
 		Auth:          handler.NewAuthHandler(cfg, log),

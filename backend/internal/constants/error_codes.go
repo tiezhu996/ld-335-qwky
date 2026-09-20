@@ -20,4 +20,5 @@ const (
 	CodeSettleInvalid    = 1402
 	CodeReverseNotToday  = 1403
 	CodeReverseAlready   = 1404
+	CodeReverseInvalidState = 1405
 )

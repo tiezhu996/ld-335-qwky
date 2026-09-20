@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 
+	"github.com/blueship581/gbinsureapi/internal/constants"
 	"github.com/blueship581/gbinsureapi/internal/dto"
 	"github.com/blueship581/gbinsureapi/internal/middleware"
 	"github.com/blueship581/gbinsureapi/internal/service"
@@ -49,7 +50,7 @@ func (h *SettlementOrderHandler) Submit(c *gin.Context) {
 
 // Reverse 结算冲正。
 // @Summary 结算冲正
-// @Description 结算当日全额回退
+// @Description 结算当日全额回退；重复请求幂等返回首次冲正结果
 // @Tags settlements
 // @Security ApiKeyAuth
 // @Security BearerAuth
@@ -57,12 +58,17 @@ func (h *SettlementOrderHandler) Submit(c *gin.Context) {
 // @Success 200 {object} util.Response
 // @Router /api/v1/settlements/{settlement_no}/reverse [post]
 func (h *SettlementOrderHandler) Reverse(c *gin.Context) {
-	order, err := h.svc.ReverseSettlement(c.Request.Context(), c.Param("settlement_no"))
+	order, replayed, err := h.svc.ReverseSettlement(c.Request.Context(), c.Param("settlement_no"))
 	if err != nil {
 		c.Error(err)
 		return
 	}
-	util.OK(c, order)
+	if replayed {
+		// 重复/并发请求：HTTP 200 返回首次冲正结果，并提示未发生二次迁移。
+		util.OKMessage(c, constants.MsgSettlementReverseReplay, order)
+		return
+	}
+	util.OKMessage(c, constants.MsgSettlementReversed, order)
 }
 
 // List 历史结算查询。

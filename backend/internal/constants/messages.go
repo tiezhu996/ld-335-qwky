@@ -23,6 +23,8 @@ const (
 	MsgSettlementNoUnique     = "结算单号（SettlementOrder.settlement_no）生成冲突"
 	MsgReverseNotToday        = "仅支持当日结算冲正（SettlementOrder）"
 	MsgReverseAlready         = "结算单（SettlementOrder）已冲正，禁止重复操作"
+	MsgReverseInvalidState    = "仅已结算（settled）状态的结算单（SettlementOrder）可冲正"
+	MsgSettlementReverseReplay = "重复冲正请求，返回首次冲正结果（SettlementOrder）"
 	MsgRateLimited            = "请求频率超出调用方（ApiClient.rate_limit_qps）限制"
 	MsgInternalError          = "服务内部错误"
 	MsgParamInvalid           = "请求参数校验失败"
